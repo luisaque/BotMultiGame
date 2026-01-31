@@ -11,7 +11,6 @@ from telegram.ext import (
 from games.impostor import ImpostorGame
 from games.hombres_lobo import WerewolfGame
 from games.hombres_lobo.roles import Role, ROLES_INFO
-from games.preguntas import TODAS, RAPIDAS, PREGUNTA_CHISME
 
 load_dotenv()
 
@@ -249,8 +248,7 @@ async def check_night_complete(context: ContextTypes.DEFAULT_TYPE, game: Werewol
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🎭 El Impostor", callback_data="menu_impostor")],
-        [InlineKeyboardButton("🐺 Hombres Lobo", callback_data="menu_werewolf")],
-        [InlineKeyboardButton("❓ Preguntas Pa Conocernos", callback_data="menu_preguntas")],
+        [InlineKeyboardButton("🐺 Hombres Lobo", callback_data="menu_werewolf")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -258,8 +256,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎮 *Bot MultiGame*\n\n"
         "Bienvenido! Elige un juego:\n\n"
         "🎭 *El Impostor* - 3+ jugadores\n"
-        "🐺 *Hombres Lobo* - 6+ jugadores\n"
-        "❓ *Preguntas Pa Conocernos* - 1+ jugadores",
+        "🐺 *Hombres Lobo* - 6+ jugadores",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
@@ -281,11 +278,7 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/unirse - Unirse a partida\n"
         "/iniciar - Iniciar juego\n"
         "/votar - Iniciar votacion\n"
-        "/vivos - Ver jugadores vivos\n\n"
-        "*Preguntas Pa Conocernos:*\n"
-        "/pregunta - Pregunta al azar (239)\n"
-        "/rapida - Pregunta rapida (77)\n"
-        "/reiniciar - Reiniciar preguntas",
+        "/vivos - Ver jugadores vivos\n\n",
         parse_mode="Markdown"
     )
 
@@ -894,77 +887,6 @@ async def wolf_day_vote_callback(update: Update, context: ContextTypes.DEFAULT_T
         await send_night_actions(context, game, chat_id)
 
 
-# ==================== PREGUNTAS PA CONOCERNOS ====================
-
-TODAS_CON_CHISME = TODAS + [PREGUNTA_CHISME]
-
-async def pregunta_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-
-    if "preguntas_usadas" not in context.chat_data:
-        context.chat_data["preguntas_usadas"] = []
-
-    usadas = context.chat_data["preguntas_usadas"]
-    disponibles = [p for p in TODAS_CON_CHISME if p not in usadas]
-
-    if not disponibles:
-        await update.message.reply_text(
-            "❓ Se acabaron todas las preguntas!\n\n"
-            "Usa /reiniciar para volver a empezar."
-        )
-        return
-
-    import random
-    p = random.choice(disponibles)
-    usadas.append(p)
-
-    restantes = len(disponibles) - 1
-    await update.message.reply_text(
-        f"❓ *Pregunta:*\n\n{p}\n\n_(Quedan {restantes} preguntas)_",
-        parse_mode="Markdown"
-    )
-
-
-async def pregunta_rapida_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-
-    if "rapidas_usadas" not in context.chat_data:
-        context.chat_data["rapidas_usadas"] = []
-
-    usadas = context.chat_data["rapidas_usadas"]
-    disponibles = [p for p in RAPIDAS if p not in usadas]
-
-    if not disponibles:
-        await update.message.reply_text(
-            "⚡ Se acabaron todas las preguntas rapidas!\n\n"
-            "Usa /reiniciar para volver a empezar."
-        )
-        return
-
-    import random
-    p = random.choice(disponibles)
-    usadas.append(p)
-
-    restantes = len(disponibles) - 1
-    await update.message.reply_text(
-        f"⚡ *Pregunta rapida:*\n\n{p}\n\n_(Quedan {restantes} preguntas)_",
-        parse_mode="Markdown"
-    )
-
-
-async def reiniciar_preguntas_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.chat_data["preguntas_usadas"] = []
-    context.chat_data["rapidas_usadas"] = []
-    await update.message.reply_text(
-        "🔄 *Preguntas reiniciadas!*\n\n"
-        f"Disponibles:\n"
-        f"• {len(TODAS_CON_CHISME)} preguntas normales\n"
-        f"• {len(RAPIDAS)} preguntas rapidas\n\n"
-        "Usa /pregunta o /rapida para jugar.",
-        parse_mode="Markdown"
-    )
-
-
 # ==================== CALLBACKS MENU ====================
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -987,16 +909,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Usa /lobos para crear una partida.",
             parse_mode="Markdown"
         )
-    elif query.data == "menu_preguntas":
-        await query.message.reply_text(
-            "❓ *Preguntas Pa Conocernos*\n\n"
-            f"239 preguntas para conocerse mejor!\n\n"
-            "Comandos:\n"
-            "/pregunta - Pregunta al azar\n"
-            "/rapida - Pregunta rapida\n"
-            "/reiniciar - Reiniciar preguntas",
-            parse_mode="Markdown"
-        )
 
 
 # ==================== SETUP ====================
@@ -1007,9 +919,6 @@ async def post_init(application):
         BotCommand("ayuda", "Ver comandos"),
         BotCommand("impostor", "Crear partida El Impostor"),
         BotCommand("lobos", "Crear partida Hombres Lobo"),
-        BotCommand("pregunta", "Pregunta al azar"),
-        BotCommand("rapida", "Pregunta rapida"),
-        BotCommand("reiniciar", "Reiniciar preguntas"),
         BotCommand("unirse", "Unirse a partida"),
         BotCommand("salir", "Salir de partida"),
         BotCommand("iniciar", "Iniciar juego"),
@@ -1032,11 +941,6 @@ def main():
     # Hombres Lobo
     app.add_handler(CommandHandler("lobos", lobos_crear))
     app.add_handler(CommandHandler("werewolf", lobos_crear))
-
-    # Preguntas Pa Conocernos
-    app.add_handler(CommandHandler("pregunta", pregunta_cmd))
-    app.add_handler(CommandHandler("rapida", pregunta_rapida_cmd))
-    app.add_handler(CommandHandler("reiniciar", reiniciar_preguntas_cmd))
 
     # Comandos compartidos
     app.add_handler(CommandHandler("unirse", lobos_unirse))
