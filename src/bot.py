@@ -1,13 +1,39 @@
 import os
 import asyncio
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
 )
+
+# Comandos por estado
+COMMANDS_DEFAULT = [
+    BotCommand("start", "Menu principal"),
+    BotCommand("ayuda", "Ver comandos"),
+    BotCommand("impostor", "Crear partida El Impostor"),
+    BotCommand("lobos", "Crear partida Hombres Lobo"),
+]
+
+COMMANDS_IMPOSTOR = [
+    BotCommand("unirse", "Unirse a la partida"),
+    BotCommand("salir", "Salir de la partida"),
+    BotCommand("iniciar", "Iniciar el juego"),
+    BotCommand("votar", "Iniciar votacion"),
+    BotCommand("cancelar", "Cancelar partida"),
+]
+
+COMMANDS_LOBOS = [
+    BotCommand("unirse", "Unirse a la partida"),
+    BotCommand("salir", "Salir de la partida"),
+    BotCommand("iniciar", "Iniciar el juego"),
+    BotCommand("votar", "Iniciar votacion"),
+    BotCommand("vivos", "Ver jugadores vivos"),
+    BotCommand("rol", "Ver tu rol"),
+    BotCommand("cancelar", "Cancelar partida"),
+]
 from games.impostor import ImpostorGame
 from games.hombres_lobo import WerewolfGame
 from games.hombres_lobo.roles import Role, ROLES_INFO
@@ -25,6 +51,20 @@ user_to_game: dict[int, int] = {}
 
 
 # ==================== UTILIDADES ====================
+
+async def set_chat_commands(bot, chat_id: int, game_type: str | None):
+    """Actualiza los comandos disponibles en un chat segun el juego activo."""
+    try:
+        scope = BotCommandScopeChat(chat_id=chat_id)
+        if game_type == "impostor":
+            await bot.set_my_commands(COMMANDS_IMPOSTOR, scope=scope)
+        elif game_type == "lobos":
+            await bot.set_my_commands(COMMANDS_LOBOS, scope=scope)
+        else:
+            await bot.set_my_commands(COMMANDS_DEFAULT, scope=scope)
+    except Exception as e:
+        print(f"Error actualizando comandos del chat {chat_id}: {e}")
+
 
 def get_game_for_user(user_id: int) -> tuple[WerewolfGame | None, int | None]:
     """Obtiene el juego en el que participa un usuario."""
@@ -239,6 +279,7 @@ async def check_night_complete(context: ContextTypes.DEFAULT_TYPE, game: Werewol
         for player in game.players.values():
             if player.user_id in user_to_game:
                 del user_to_game[player.user_id]
+        await set_chat_commands(context.bot, chat_id, None)
 
     return True
 
@@ -263,24 +304,40 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📖 *Comandos disponibles*\n\n"
-        "*Generales:*\n"
-        "/start - Menu principal\n"
-        "/ayuda - Ver comandos\n\n"
-        "*El Impostor:*\n"
-        "/impostor - Crear partida\n"
-        "/unirse - Unirse a partida\n"
-        "/iniciar - Iniciar juego\n"
-        "/votar - Iniciar votacion\n\n"
-        "*Hombres Lobo:*\n"
-        "/lobos - Crear partida\n"
-        "/unirse - Unirse a partida\n"
-        "/iniciar - Iniciar juego\n"
-        "/votar - Iniciar votacion\n"
-        "/vivos - Ver jugadores vivos",
-        parse_mode="Markdown"
-    )
+    chat_id = update.effective_chat.id
+
+    # Mostrar ayuda segun el juego activo
+    if chat_id in impostor_games:
+        await update.message.reply_text(
+            "📖 *El Impostor - Comandos*\n\n"
+            "/unirse - Unirse a la partida\n"
+            "/salir - Salir de la partida\n"
+            "/iniciar - Iniciar el juego\n"
+            "/votar - Iniciar votacion\n"
+            "/cancelar - Cancelar la partida",
+            parse_mode="Markdown"
+        )
+    elif chat_id in werewolf_games:
+        await update.message.reply_text(
+            "📖 *Hombres Lobo - Comandos*\n\n"
+            "/unirse - Unirse a la partida\n"
+            "/salir - Salir de la partida\n"
+            "/iniciar - Iniciar el juego\n"
+            "/votar - Iniciar votacion\n"
+            "/vivos - Ver jugadores vivos\n"
+            "/rol - Ver tu rol\n"
+            "/cancelar - Cancelar la partida",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            "📖 *Comandos disponibles*\n\n"
+            "/start - Menu principal\n"
+            "/ayuda - Ver comandos\n"
+            "/impostor - Crear partida El Impostor\n"
+            "/lobos - Crear partida Hombres Lobo",
+            parse_mode="Markdown"
+        )
 
 
 # ==================== EL IMPOSTOR ====================
@@ -293,9 +350,16 @@ async def impostor_crear(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ya hay una partida de El Impostor en este chat.")
         return
 
+    if chat_id in werewolf_games:
+        await update.message.reply_text("Ya hay una partida de Hombres Lobo en este chat.")
+        return
+
     game = ImpostorGame(chat_id=chat_id, creator_id=user.id)
     game.add_player(user.id, user.full_name, user.username)
     impostor_games[chat_id] = game
+
+    # Actualizar comandos del chat
+    await set_chat_commands(context.bot, chat_id, "impostor")
 
     await update.message.reply_text(
         f"🎭 *El Impostor*\n\n"
@@ -442,6 +506,7 @@ async def impostor_vote_callback(update: Update, context: ContextTypes.DEFAULT_T
 
         await query.message.reply_text(f"{emoji} {result}")
         del impostor_games[chat_id]
+        await set_chat_commands(context.bot, chat_id, None)
 
 
 # ==================== HOMBRES LOBO ====================
@@ -454,9 +519,16 @@ async def lobos_crear(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ya hay una partida de Hombres Lobo en este chat.")
         return
 
+    if chat_id in impostor_games:
+        await update.message.reply_text("Ya hay una partida de El Impostor en este chat.")
+        return
+
     game = WerewolfGame(chat_id=chat_id, creator_id=user.id)
     game.add_player(user.id, user.full_name, user.username)
     werewolf_games[chat_id] = game
+
+    # Actualizar comandos del chat
+    await set_chat_commands(context.bot, chat_id, "lobos")
 
     await update.message.reply_text(
         f"🐺 *Hombres Lobo de Castronegro*\n\n"
@@ -502,6 +574,7 @@ async def lobos_salir(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del werewolf_games[chat_id]
         if chat_id in impostor_games:
             del impostor_games[chat_id]
+        await set_chat_commands(context.bot, chat_id, None)
         await update.message.reply_text("Partida cancelada (no quedan jugadores).")
     else:
         await update.message.reply_text(msg)
@@ -868,6 +941,7 @@ async def wolf_day_vote_callback(update: Update, context: ContextTypes.DEFAULT_T
 
                     if game.phase.value == "finished":
                         del werewolf_games[chat_id]
+                        await set_chat_commands(context.bot, chat_id, None)
                     elif game.phase.value == "night":
                         await send_night_actions(context, game, chat_id)
         return
@@ -882,9 +956,42 @@ async def wolf_day_vote_callback(update: Update, context: ContextTypes.DEFAULT_T
         for player in game.players.values():
             if player.user_id in user_to_game:
                 del user_to_game[player.user_id]
+        await set_chat_commands(context.bot, chat_id, None)
     elif game.phase.value == "night":
         await query.message.reply_text(f"🐺 {msg}")
         await send_night_actions(context, game, chat_id)
+
+
+# ==================== CANCELAR PARTIDA ====================
+
+async def cancelar_partida(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+
+    game = werewolf_games.get(chat_id) or impostor_games.get(chat_id)
+    if not game:
+        await update.message.reply_text("No hay partida activa.")
+        return
+
+    # Solo el creador puede cancelar
+    if user.id != game.creator_id:
+        await update.message.reply_text("Solo el creador de la partida puede cancelarla.")
+        return
+
+    game_name = "El Impostor" if chat_id in impostor_games else "Hombres Lobo"
+
+    if chat_id in werewolf_games:
+        # Limpiar mapeo de usuarios
+        for player in game.players.values():
+            if player.user_id in user_to_game:
+                del user_to_game[player.user_id]
+        del werewolf_games[chat_id]
+
+    if chat_id in impostor_games:
+        del impostor_games[chat_id]
+
+    await set_chat_commands(context.bot, chat_id, None)
+    await update.message.reply_text(f"❌ Partida de {game_name} cancelada.")
 
 
 # ==================== CALLBACKS MENU ====================
@@ -914,17 +1021,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== SETUP ====================
 
 async def post_init(application):
-    await application.bot.set_my_commands([
-        BotCommand("start", "Menu principal"),
-        BotCommand("ayuda", "Ver comandos"),
-        BotCommand("impostor", "Crear partida El Impostor"),
-        BotCommand("lobos", "Crear partida Hombres Lobo"),
-        BotCommand("unirse", "Unirse a partida"),
-        BotCommand("salir", "Salir de partida"),
-        BotCommand("iniciar", "Iniciar juego"),
-        BotCommand("votar", "Iniciar votacion"),
-        BotCommand("vivos", "Ver jugadores vivos"),
-    ])
+    # Comandos globales por defecto (cuando no hay partida activa)
+    await application.bot.set_my_commands(COMMANDS_DEFAULT)
 
 
 def main():
@@ -950,6 +1048,7 @@ def main():
     app.add_handler(CommandHandler("votar", lobos_votar))
     app.add_handler(CommandHandler("jugadores", lobos_jugadores))
     app.add_handler(CommandHandler("vivos", lobos_vivos))
+    app.add_handler(CommandHandler("cancelar", cancelar_partida))
 
     # Callbacks menu
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu_"))
